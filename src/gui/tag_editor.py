@@ -89,6 +89,17 @@ class TagEditorFrame(ttk.Frame):
         dialog = GroupDialog(self, self.repository)
         self.wait_window(dialog)
         self.load_groups()
+        
+        # 通知主界面刷新
+        main_window = self
+        while main_window and not hasattr(main_window, 'sql_builder_frame'):
+            main_window = main_window.master
+        
+        if main_window and hasattr(main_window, 'sql_builder_frame'):
+            # 清空缓存并重新加载
+            main_window.sql_builder_frame._cached_groups = None
+            main_window.sql_builder_frame._cached_fields = {}
+            main_window.sql_builder_frame.load_tables()
 
     def edit_group(self):
         selected = self.group_tree.selection()
@@ -101,6 +112,17 @@ class TagEditorFrame(ttk.Frame):
         dialog = GroupDialog(self, self.repository, group)
         self.wait_window(dialog)
         self.load_groups()
+        
+        # 通知主界面刷新
+        main_window = self
+        while main_window and not hasattr(main_window, 'sql_builder_frame'):
+            main_window = main_window.master
+        
+        if main_window and hasattr(main_window, 'sql_builder_frame'):
+            # 清空缓存并重新加载
+            main_window.sql_builder_frame._cached_groups = None
+            main_window.sql_builder_frame._cached_fields = {}
+            main_window.sql_builder_frame.load_tables()
 
     def delete_group(self):
         selected = self.group_tree.selection()
@@ -112,6 +134,17 @@ class TagEditorFrame(ttk.Frame):
         if messagebox.askyesno("确认", "删除标签组将同时删除组内所有标签，是否继续？"):
             self.repository.delete_group(group_id)
             self.load_groups()
+            
+            # 通知主界面刷新
+            main_window = self
+            while main_window and not hasattr(main_window, 'sql_builder_frame'):
+                main_window = main_window.master
+            
+            if main_window and hasattr(main_window, 'sql_builder_frame'):
+                # 清空缓存并重新加载
+                main_window.sql_builder_frame._cached_groups = None
+                main_window.sql_builder_frame._cached_fields = {}
+                main_window.sql_builder_frame.load_tables()
 
     def load_groups(self):
         """加载标签组到树形视图"""
@@ -152,50 +185,26 @@ class TagEditorFrame(ttk.Frame):
         # 获取父组
         parent_group = self.repository.find_group_by_id(current_group.parent_group_id)
         
-        # 打印调试信息
-        # print(f"\n选中组: {current_group.group_name}")
-        if parent_group:
-            # print(f"父组: {parent_group.group_name}")
-        
         # 更新标签类型选项
         type_options = self.get_tag_type_options(None)
-        # print(f"可选标签类型: {type_options}")  # 调试信息
         
         # 如果没有可选的标签类型，禁用标签编辑区
         if not type_options:
             self.tag_type_combo.set('')
             self.disable_tag_editing()
-            # print("禁用标签编辑区")  # 调试信息
         else:
             self.tag_type_combo['values'] = list(type_options.values())
             self.tag_type_var.set(list(type_options.values())[0])
             self.tag_type_combo.current(0)
             self.enable_tag_editing()
-            # print(f"启用标签编辑区，设置标签类型为: {list(type_options.values())[0]}")  # 调试信息
         
         # 加载标签
         self.load_tags(group_id)
-
-        # 打印调试信息
-        # print(f"当前组: {current_group.group_name} (type={current_group.group_type})")
-        if parent_group:
-            # print(f"父组: {parent_group.group_name} (type={parent_group.group_type})")
-        
-        # 如果是根组，返回所有可用的标签类型
-        if not parent_group:
-            return {
-                'table': '表名标签',
-                'field': '字段标签',
-                'condition': '条件标签',
-                'history': '历史记录',
-                'book': '宝典记录'
-            }
         
         # 获取祖父组（如果存在）
         grandfather_group = None
-        if parent_group.parent_group_id:
+        if parent_group and parent_group.parent_group_id:
             grandfather_group = self.repository.find_group_by_id(parent_group.parent_group_id)
-            # print(f"祖父组: {grandfather_group.group_name} (type={grandfather_group.group_type})")
 
     def load_tags(self, group_id=None):
         """加载标签列表"""
@@ -284,23 +293,8 @@ class TagEditorFrame(ttk.Frame):
             return
         
         try:
-            # 打印调试信息
-            # print("\n=== 开始保存标签 ===")
-            # print(f"标签名称: {tag_name}")
-            # print(f"标签类型: {tag_type}")
-            # print(f"所属组ID: {group_id}")
-            # print(f"所属组: {current_group.group_name} (type={current_group.group_type})")
-            
-            # 保存前查询标签
-            old_tag = self.repository.find_by_tag_name(tag_name)
-            # print(f"保存前查询到标签: {old_tag.tag_name if old_tag else 'None'}")
-            
             # 保存标签
             self.repository.save(tag_name, sql_fragment, description, group_id, tag_type)
-            
-            # 保存后查询验证
-            new_tag = self.repository.find_by_tag_name(tag_name)
-            # print(f"保存后查询标签: {new_tag.tag_name if new_tag else 'None'}")
             
             # 立即刷新标签列表
             self.load_tags(group_id)
@@ -312,29 +306,20 @@ class TagEditorFrame(ttk.Frame):
             
             if main_window and hasattr(main_window, 'sql_builder_frame'):
                 sql_builder = main_window.sql_builder_frame
+                # 清空缓存
+                sql_builder._cached_groups = None
+                sql_builder._cached_fields = {}
+                # 刷新表格下拉列表
+                sql_builder.load_tables()
+                # 如果当前标签所属的表组正在被选中，则刷新字段列表
                 current_table = sql_builder.table_combobox.get()
-                # print(f"当前选中的表: {current_table}")
-                
-                # 获取当前选中的表组
-                table_groups = sql_builder.table_groups
-                # 查找标签所属的表组
-                parent_group = self.repository.find_group_by_id(current_group.parent_group_id)
-                if parent_group:
-                    # print(f"父组: {parent_group.group_name} (type={parent_group.group_type})")
-                    # 如果当前标签所属的表组正在被选中，则刷新字段列表
-                    for table_name, group in table_groups.items():
-                        # print(f"检查表组: {table_name} (id={group.id})")
-                        if group.id == parent_group.id:
-                            # print(f"找到匹配的表组，刷新表 {table_name} 的字段列表")
-                            sql_builder.refresh_fields()  # 这里会触发字段选择查询
-                            break
+                if current_table:
+                    sql_builder.refresh_fields()
             
             # 显示成功消息
             messagebox.showinfo("成功", "标签保存成功！")
-            # print("=== 标签保存完成 ===\n")
             
         except Exception as e:
-            # print(f"保存标签失败: {str(e)}")
             messagebox.showerror("错误", f"保存失败：{str(e)}")
 
     def delete_tag(self):
@@ -410,11 +395,6 @@ class TagEditorFrame(ttk.Frame):
         # 获取父组
         parent_group = self.repository.find_group_by_id(current_group.parent_group_id)
         
-        # 打印调试信息
-        # print(f"当前组: {current_group.group_name} (type={current_group.group_type})")
-        if parent_group:
-            # print(f"父组: {parent_group.group_name} (type={parent_group.group_type})")
-        
         # 如果是根组，返回所有可用的标签类型
         if not parent_group:
             return {
@@ -424,12 +404,6 @@ class TagEditorFrame(ttk.Frame):
                 'history': '历史记录',
                 'book': '宝典记录'
             }
-        
-        # 获取祖父组（如果存在）
-        grandfather_group = None
-        if parent_group.parent_group_id:
-            grandfather_group = self.repository.find_group_by_id(parent_group.parent_group_id)
-            # print(f"祖父组: {grandfather_group.group_name} (type={grandfather_group.group_type})")
         
         # 根据父组类型返回可选的标签类型
         if parent_group.group_type == 'root':  # 父组是根组

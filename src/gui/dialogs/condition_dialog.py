@@ -206,11 +206,21 @@ class ConditionDialog(tk.Toplevel):
                 existing_count += 1
         
         # 添加新条件
-        self.selected_list.insert("", "end", values=(
-            existing_count + 1,
-            tag_name,
-            str(sql_fragment)  # 确保 sql_fragment 是字符串
-        ))
+        # 如果是表名组的条件（不以方括号开头），使用标签名作为条件名
+        # 否则使用 SQL 片段作为条件名和 SQL
+        if not tag_name.startswith('['):
+            self.selected_list.insert("", "end", values=(
+                existing_count + 1,
+                tag_name,
+                str(sql_fragment)  # 确保 sql_fragment 是字符串
+            ))
+        else:
+            # 对于非表名组的条件，使用 SQL 片段
+            self.selected_list.insert("", "end", values=(
+                existing_count + 1,
+                tag_name,  # 显示标签名
+                str(sql_fragment)  # 使用 SQL 片段
+            ))
         
         # 更新序号
         self._update_numbers()
