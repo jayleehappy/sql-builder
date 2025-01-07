@@ -112,10 +112,10 @@ class MainWindow(tk.Tk):
             if os.path.exists(self.config_file):
                 with open(self.config_file, 'r') as f:
                     config = json.load(f)
-                    return config.get('theme', 'arc')
+                    return config.get('theme', 'default')
         except Exception:
             pass
-        return 'arc'  # 默认主题
+        return 'default'  # 默认主题
 
     def save_theme_config(self, theme):
         """保存主题配置"""
