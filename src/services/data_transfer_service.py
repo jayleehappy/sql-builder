@@ -2,6 +2,7 @@ import sqlite3
 import pandas as pd
 from typing import List, Dict, Tuple
 from ..models.sql_tag import SqlTag
+import os
 
 class DataTransferService:
     def __init__(self, repository):
@@ -169,28 +170,62 @@ class DataTransferService:
 
     def export_to_sqlite(self, filepath: str) -> None:
         """导出数据到SQLite数据库"""
+        # 如果文件已存在，先删除它
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            
         conn = sqlite3.connect(filepath)
         cursor = conn.cursor()
         
         # 创建表结构
         cursor.execute('''
-            CREATE TABLE IF NOT EXISTS sql_tags (
+            CREATE TABLE IF NOT EXISTS tag_groups (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 group_name TEXT NOT NULL,
-                tag_name TEXT NOT NULL,
-                sql_content TEXT NOT NULL,
+                group_type TEXT NOT NULL DEFAULT 'root',
                 description TEXT,
-                UNIQUE(group_name, tag_name)
+                parent_group_id INTEGER,
+                create_time TIMESTAMP,
+                update_time TIMESTAMP,
+                FOREIGN KEY (parent_group_id) REFERENCES tag_groups(id),
+                UNIQUE(group_name, parent_group_id)
             )
         ''')
+        
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS sql_tags (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag_name TEXT NOT NULL,
+                sql_fragment TEXT NOT NULL,
+                description TEXT,
+                group_id INTEGER NOT NULL,
+                tag_type TEXT NOT NULL,
+                create_time TIMESTAMP,
+                update_time TIMESTAMP,
+                FOREIGN KEY (group_id) REFERENCES tag_groups(id),
+                UNIQUE(tag_name, group_id)
+            )
+        ''')
+        
+        # 获取所有标签组并导出
+        groups = self.repository.find_all_groups()
+        for group in groups:
+            cursor.execute('''
+                INSERT INTO tag_groups 
+                (id, group_name, group_type, description, parent_group_id, create_time, update_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ''', (group.id, group.group_name, group.group_type, group.description, 
+                 group.parent_group_id, group.create_time, group.update_time))
         
         # 获取所有标签并导出
         tags = self.repository.find_all_tags()
         for tag in tags:
             cursor.execute('''
-                INSERT INTO sql_tags (group_name, tag_name, sql_content, description)
-                VALUES (?, ?, ?, ?)
-            ''', (tag.group_name, tag.tag_name, tag.sql_content, tag.description))
+                INSERT INTO sql_tags 
+                (id, tag_name, sql_fragment, description, group_id, tag_type, create_time, update_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (tag.id, tag.tag_name, tag.sql_fragment, tag.description, 
+                 tag.group_id, tag.tag_type, tag.create_time, tag.update_time))
         
         conn.commit()
         conn.close()
@@ -207,15 +242,44 @@ class DataTransferService:
             # 检查表是否存在
             cursor.execute("""
                 SELECT name FROM sqlite_master 
-                WHERE type='table' AND name='sql_tags'
+                WHERE type='table' AND name IN ('sql_tags', 'tag_groups')
             """)
-            if not cursor.fetchone():
-                return 0, ['数据库中不存在sql_tags表']
+            tables = cursor.fetchall()
+            if len(tables) < 2:
+                return 0, ['数据库中缺少必要的表：sql_tags 或 tag_groups']
+
+            # 先导入标签组
+            cursor.execute('SELECT * FROM tag_groups')
+            source_groups = cursor.fetchall()
+            
+            # 获取现有的组
+            existing_groups = {group.group_name: group for group in self.repository.find_all_groups()}
+            
+            # 导入新的组（不覆盖已存在的）
+            group_id_mapping = {}  # 用于存储源数据库ID到目标数据库ID的映射
+            for group in source_groups:
+                src_id, group_name, group_type, description, parent_id, create_time, update_time = group
+                
+                if group_name not in existing_groups:
+                    # 如果组不存在，则创建新组
+                    with sqlite3.connect(self.repository.db_path) as conn:
+                        cursor2 = conn.execute('''
+                            INSERT INTO tag_groups 
+                            (group_name, group_type, description, parent_group_id, create_time, update_time)
+                            VALUES (?, ?, ?, ?, ?, ?)
+                        ''', (group_name, group_type, description, parent_id, create_time, update_time))
+                        group_id_mapping[src_id] = cursor2.lastrowid
+                else:
+                    # 如果组已存在，记录ID映射
+                    group_id_mapping[src_id] = existing_groups[group_name].id
 
             # 获取所有标签
             cursor.execute('''
-                SELECT group_name, tag_name, sql_content, description
-                FROM sql_tags
+                SELECT t.id, t.tag_name, t.sql_fragment, t.description, 
+                       t.group_id, t.tag_type, t.create_time, t.update_time,
+                       g.group_name
+                FROM sql_tags t
+                JOIN tag_groups g ON t.group_id = g.id
             ''')
             
             success_count = 0
@@ -223,33 +287,43 @@ class DataTransferService:
             
             for row in cursor.fetchall():
                 try:
-                    group_name, tag_name, sql_content, description = row
+                    src_id, tag_name, sql_fragment, description, src_group_id, tag_type, create_time, update_time, group_name = row
                     
+                    # 使用映射后的group_id
+                    mapped_group_id = group_id_mapping.get(src_group_id)
+                    if not mapped_group_id:
+                        errors.append(f'标签 [{group_name}-{tag_name}] 的组ID映射失败，已跳过')
+                        continue
+
                     # 检查是否存在
                     existing_tag = self.repository.find_tag_by_names(group_name, tag_name)
                     
                     if existing_tag:
-                        # print(f"标签已存在：{group_name}-{tag_name}")
-                        
                         if conflict_strategy == 'skip':
                             errors.append(f'标签 [{group_name}-{tag_name}] 已存在，已跳过')
                             continue
                         elif conflict_strategy == 'rename':
                             i = 1
-                            while self.repository.find_tag_by_names(group_name, f"{tag_name}_{i}"):
+                            new_tag_name = f"{tag_name}_{i}"
+                            while self.repository.find_tag_by_names(group_name, new_tag_name):
                                 i += 1
-                            tag_name = f"{tag_name}_{i}"
+                                new_tag_name = f"{tag_name}_{i}"
+                            tag_name = new_tag_name
 
                     # 创建或更新标签
-                    tag = SqlTag(group_name=group_name,
-                               tag_name=tag_name,
-                               sql_content=sql_content,
-                               description=description)
-                    
                     if existing_tag and conflict_strategy == 'replace':
-                        self.repository.update_tag(tag)
+                        existing_tag.sql_fragment = sql_fragment
+                        existing_tag.description = description
+                        existing_tag.tag_type = tag_type
+                        self.repository.update_tag(existing_tag)
                     else:
-                        self.repository.create_tag(tag)
+                        self.repository.save(
+                            tag_name=tag_name,
+                            sql_fragment=sql_fragment,
+                            description=description,
+                            group_id=mapped_group_id,
+                            tag_type=tag_type
+                        )
                     
                     success_count += 1
                     

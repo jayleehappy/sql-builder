@@ -54,6 +54,10 @@ class SqlTagRepository:
                 conn.execute('ALTER TABLE tag_groups ADD COLUMN group_type TEXT DEFAULT "table"')
                 conn.execute('UPDATE tag_groups SET group_type = "table" WHERE group_type IS NULL')
             
+            if 'group_name' not in columns:
+                conn.execute('ALTER TABLE tag_groups ADD COLUMN group_name TEXT')
+                conn.execute('UPDATE tag_groups SET group_name = group_name WHERE group_name IS NULL')
+            
             # 检查是否需要创建根组
             cursor = conn.execute('SELECT COUNT(*) FROM tag_groups')
             if cursor.fetchone()[0] == 0:
@@ -69,6 +73,34 @@ class SqlTagRepository:
                         ('宝典', 'book', 'SQL宝典', NULL, ?, ?)
                 ''', (now, now, now, now, now, now, now, now))
 
+    def clear_database(self):
+        """清空数据库中的所有数据"""
+        with sqlite3.connect(self.db_path) as conn:
+            # 关闭外键约束
+            conn.execute('PRAGMA foreign_keys = OFF')
+            # 清空表
+            conn.execute('DELETE FROM sql_tags')
+            conn.execute('DELETE FROM tag_groups')
+            # 重置自增ID
+            conn.execute('DELETE FROM sqlite_sequence WHERE name IN ("sql_tags", "tag_groups")')
+            # 重新开启外键约束
+            conn.execute('PRAGMA foreign_keys = ON')
+            conn.commit()
+
+    def recreate_database(self):
+        """重新创建数据库"""
+        with sqlite3.connect(self.db_path) as conn:
+            # 关闭外键约束
+            conn.execute('PRAGMA foreign_keys = OFF')
+            # 删除现有表
+            conn.execute('DROP TABLE IF EXISTS sql_tags')
+            conn.execute('DROP TABLE IF EXISTS tag_groups')
+            # 重新开启外键约束
+            conn.execute('PRAGMA foreign_keys = ON')
+            # 重新初始化数据库
+            self._init_db()
+            self.fix_group_types()
+
     def save(self, tag_name: str, sql_fragment: str, description: str, 
              group_id: int, tag_type: str) -> SqlTag:
         try:
@@ -76,19 +108,53 @@ class SqlTagRepository:
             
             with sqlite3.connect(self.db_path) as conn:
                 now = datetime.now()
+                # 先检查是否存在相同的标签名和组ID
                 cursor = conn.execute(
-                    '''INSERT INTO sql_tags 
-                       (tag_name, sql_fragment, description, group_id, tag_type, 
-                        create_time, update_time)
-                       VALUES (?, ?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(tag_name, group_id) 
-                       DO UPDATE SET sql_fragment=?, description=?, tag_type=?, 
-                                   update_time=?''',
-                    (tag_name, sql_fragment, description, group_id, tag_type, now, now,
-                     sql_fragment, description, tag_type, now)
+                    'SELECT id FROM sql_tags WHERE tag_name = ? AND group_id = ?',
+                    (tag_name, group_id)
                 )
-                return SqlTag(cursor.lastrowid or group_id, tag_name, sql_fragment, 
-                             description, group_id, tag_type, now, now)
+                existing_tag = cursor.fetchone()
+                
+                if existing_tag:
+                    # 如果存在，则更新
+                    cursor = conn.execute(
+                        '''UPDATE sql_tags 
+                           SET sql_fragment = ?, description = ?, tag_type = ?, 
+                               update_time = ?
+                           WHERE id = ?''',
+                        (sql_fragment, description, tag_type, now, existing_tag[0])
+                    )
+                    tag_id = existing_tag[0]
+                else:
+                    # 如果不存在，则插入
+                    cursor = conn.execute(
+                        '''INSERT INTO sql_tags 
+                           (tag_name, sql_fragment, description, group_id, tag_type, 
+                            create_time, update_time)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)''',
+                        (tag_name, sql_fragment, description, group_id, tag_type, 
+                         now, now)
+                    )
+                    tag_id = cursor.lastrowid
+                
+                # 获取组名
+                cursor = conn.execute(
+                    'SELECT group_name FROM tag_groups WHERE id = ?',
+                    (group_id,)
+                )
+                group_name = cursor.fetchone()[0]
+                
+                return SqlTag(
+                    id=tag_id,
+                    tag_name=tag_name,
+                    sql_fragment=sql_fragment,
+                    description=description,
+                    group_id=group_id,
+                    tag_type=tag_type,
+                    create_time=now,
+                    update_time=now,
+                    group_name=group_name
+                )
         except Exception as e:
             raise
 

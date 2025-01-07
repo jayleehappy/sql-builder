@@ -15,16 +15,16 @@ class SqlTag:
     
     def __init__(self, id=None, tag_name=None, sql_fragment=None, description=None, 
                  group_id=None, tag_type=None, create_time=None, update_time=None,
-                 group_name=None):  # 添加 group_name 参数
+                 group_name=None, sql_content=None):  # 添加 sql_content 参数
         self.id = id
         self.tag_name = tag_name
-        self.sql_fragment = sql_fragment
+        self.sql_fragment = sql_content if sql_content is not None else sql_fragment  # 优先使用 sql_content
         self.description = description
         self.group_id = group_id
         self.tag_type = tag_type
         self.create_time = create_time
         self.update_time = update_time
-        self.group_name = group_name  # 初始化 group_name
+        self.group_name = group_name
         
     @property
     def type_display(self) -> str:
