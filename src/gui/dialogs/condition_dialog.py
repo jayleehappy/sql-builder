@@ -458,6 +458,9 @@ class ConditionDialog(tk.Toplevel):
                             operator_var.set(parts[1])
                             if len(parts) > 2:
                                 value = parts[2].strip("'() ")
+                                # 如果是 LIKE 操作符，去掉首尾的百分号
+                                if parts[1] == 'LIKE':
+                                    value = value.strip('%')
                                 value_var.set(value)
                 except:
                     pass
@@ -473,17 +476,37 @@ class ConditionDialog(tk.Toplevel):
                 else:
                     value_entry.configure(state='normal')
                     if op == 'IN':
+                        # 处理 IN 操作符
                         if not value.startswith('('):
                             value = f"({value})"
                         if not value.endswith(')'):
                             value = f"{value})"
+                        # 确保 IN 子句中的字符串值都有引号
+                        values = value.strip('()').split(',')
+                        quoted_values = []
+                        for v in values:
+                            v = v.strip()
+                            if v and not v.replace('.', '').replace('-', '').isdigit():
+                                quoted_values.append(f"'{v}'")
+                            else:
+                                quoted_values.append(v)
+                        value = f"({', '.join(quoted_values)})"
                     elif op == 'LIKE':
-                        if '%' not in value:
-                            value = f"%{value}%"
-                        value = f"'{value}'"
-                    else:
-                        if not value.replace('.', '').isdigit():
-                            value = f"'{value}'"
+                        # 处理 LIKE 操作符
+                        if value:
+                            # 如果值没有引号，添加引号和百分号
+                            if not value.startswith("'"):
+                                # 如果用户没有手动输入百分号，则自动添加
+                                if not value.startswith('%'):
+                                    value = f"%{value}"
+                                if not value.endswith('%'):
+                                    value = f"{value}%"
+                                value = f"'{value}'"
+                    elif op in ['=', '<>', '>', '<', '>=', '<=']:
+                        # 处理比较操作符
+                        if value and not value.replace('.', '').replace('-', '').isdigit():
+                            if not value.startswith("'"):
+                                value = f"'{value}'"
                     sql = f"{condition_name} {op} {value}"
                 
                 preview_text.delete('1.0', tk.END)
@@ -512,7 +535,11 @@ class ConditionDialog(tk.Toplevel):
             def update_sql(*args):
                 """更新SQL"""
                 new_sql = sql_text.get('1.0', 'end-1c')
+                # 更新条件列表中的SQL
                 self.selected_list.item(item, values=(number, condition_name, new_sql))
+                # 更新预览
+                preview_text.delete('1.0', tk.END)
+                preview_text.insert('1.0', new_sql)
             
             # 绑定文本变化事件
             sql_text.bind('<<Modified>>', update_sql)
