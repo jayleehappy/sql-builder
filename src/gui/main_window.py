@@ -12,7 +12,7 @@ import os
 class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("SQL构建器 - by 李中杰")
+        self.title("SQL构建器 - by jayleehappy")
         
         # 设置窗口大小和位置
         window_width = 1200
@@ -74,7 +74,7 @@ class MainWindow(tk.Tk):
         # 创建状态栏
         self.status_bar = ttk.Label(
             main_frame,
-            text="SQL构建器 v1.0 - by 李中杰",
+            text="SQL构建器 v1.0 - by jayleehappy",
             relief=tk.SUNKEN,
             anchor=tk.W,
             padding=(5, 2)
