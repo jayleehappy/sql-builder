@@ -117,6 +117,24 @@ class DataTransferDialog(tk.Toplevel):
             
             messagebox.showinfo("导入结果", message)
             
+            # 刷新标签组树形结构
+            main_window = self
+            while main_window and not hasattr(main_window, 'tag_editor_frame'):
+                main_window = main_window.master
+            
+            if main_window and hasattr(main_window, 'tag_editor_frame'):
+                main_window.tag_editor_frame.load_groups()
+            
+            # 刷新SQL构建器
+            main_window = self
+            while main_window and not hasattr(main_window, 'sql_builder_frame'):
+                main_window = main_window.master
+            
+            if main_window and hasattr(main_window, 'sql_builder_frame'):
+                main_window.sql_builder_frame._cached_groups = None
+                main_window.sql_builder_frame._cached_fields = {}
+                main_window.sql_builder_frame.load_tables()
+            
         except Exception as e:
             messagebox.showerror("导入错误", f"导入过程中出现错误：{str(e)}")
 
