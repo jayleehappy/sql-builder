@@ -42,7 +42,7 @@ python -m src.main
 6. Copy or save the SQL statement
 
 ### License
-MIT License
+GNU General Public License v3.0
 
 ---
 
@@ -86,4 +86,4 @@ python -m src.main
 6. 复制或保存SQL语句
 
 ### 许可证
-MIT许可证 
+GNU通用公共许可证v3.0 
