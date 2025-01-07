@@ -406,7 +406,7 @@ class SqlBuilderFrame(ttk.Frame):
                 self.update_conditions(existing_conditions)
                 
         except Exception as e:
-            print(f"添加条件时出错: {str(e)}")
+            # print(f"添加条件时出错: {str(e)}")
             traceback.print_exc()
             messagebox.showerror("错误", f"添加条件失败: {str(e)}")
 

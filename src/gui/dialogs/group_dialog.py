@@ -135,11 +135,11 @@ class GroupDialog(tk.Toplevel):
             elif self.parent_group:
                 parent_id = self.parent_group.id
             
-            print(f"\n=== 创建组 ===")
-            print(f"组名: {name}")
-            print(f"类型: {group_type}")
-            print(f"描述: {description}")
-            print(f"父组ID: {parent_id}")
+            # print(f"\n=== 创建组 ===")
+            # print(f"组名: {name}")
+            # print(f"类型: {group_type}")
+            # print(f"描述: {description}")
+            # print(f"父组ID: {parent_id}")
             
             # 创建组
             group = TagGroup(
@@ -149,7 +149,7 @@ class GroupDialog(tk.Toplevel):
                 parent_group_id=parent_id
             )
             self.result = self.repository.save_group(group)
-            print("=== 创建成功 ===\n")
+            # print("=== 创建成功 ===\n")
             self.destroy()
             
         except Exception as e:
